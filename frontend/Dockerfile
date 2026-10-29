@@ -5,7 +5,11 @@ WORKDIR /app
 
 # Cache package installation with clean npm ci
 COPY package.json package-lock.json ./
-RUN npm ci
+
+# Paksa instalasi devDependencies (termasuk Vite & Tailwind) meskipun Coolify
+# menginjeksi build-arg NODE_ENV=production
+ENV NODE_ENV=development
+RUN npm ci --include=dev
 
 # Copy all frontend source files
 COPY . .
@@ -15,6 +19,7 @@ ARG VITE_API_URL=https://api.lppm.trigunadharma.ac.id/api/v1
 ENV VITE_API_URL=$VITE_API_URL
 
 # Jalankan build Vite
+ENV NODE_ENV=production
 RUN npm run build
 
 # Stage 2: Production Nginx Server
