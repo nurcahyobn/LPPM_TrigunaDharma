@@ -1,0 +1,13 @@
+.git
+.github
+Archive
+docs
+*.md
+.env
+.env.*
+!.env.example
+node_modules
+dist
+logs
+backups
+.DS_Store

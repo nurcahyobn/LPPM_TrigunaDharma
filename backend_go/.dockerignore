@@ -1,4 +1,11 @@
 .env
+.env.*
+!.env.example
 logs/
+*.log
+backups/
+*.sql.gz
 scripts/
 *.test
+bin/
+.DS_Store
