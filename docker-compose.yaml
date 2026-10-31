@@ -1,14 +1,11 @@
-# Production Docker Compose for LPPM Triguna Dharma on Coolify
-# Specification: Compose Spec modern (no legacy version key)
 
 services:
-  # ─── FRONTEND (React 19 + Vite 8 + Nginx) ───────────────────────────
+  # ─── FRONTEND (React + Vite + Nginx) ─────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # VITE_* dibundel saat build time oleh Vite
         VITE_API_URL: ${VITE_API_URL:-https://api.lppm.trigunadharma.ac.id/api/v1}
     restart: unless-stopped
     expose:
@@ -25,7 +22,7 @@ services:
       retries: 3
       start_period: 5s
 
-  # ─── BACKEND API (Go 1.23+ net/http) ────────────────────────────────
+  # ─── BACKEND API (Go) ────────────────────────────────────
   backend:
     build:
       context: ./backend_go
@@ -35,90 +32,66 @@ services:
       - "3000"
     networks:
       - app-network
-      - db-network
+      - coolify
     environment:
       PORT: "3000"
       NODE_ENV: ${NODE_ENV:-production}
-      # Format DSN database sesuai database.Open() internal Go
-      DATABASE_URL: ${DATABASE_URL:-mysql://${DB_USER:-lppm_user}:${DB_PASSWORD}@db:3306/${DB_NAME:-lppm_db}?charset=utf8mb4&parseTime=True&loc=UTC}
+
+      # PostgreSQL external - Coolify
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL wajib diisi}
+
       CORS_ORIGIN: ${CORS_ORIGIN:-https://lppm.trigunadharma.ac.id}
-      # Wajib true karena di balik reverse proxy Coolify/Traefik untuk deteksi real IP
       TRUST_PROXY: ${TRUST_PROXY:-true}
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET wajib diisi}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET wajib diisi}
       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+
       RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-500}
+
       APP_NAME: ${APP_NAME:-LPPM Triguna Dharma}
       FRONTEND_URL: ${FRONTEND_URL:-https://lppm.trigunadharma.ac.id}
+
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      # Konfigurasi automated backup bulanan bawaan backend Go
+
+      # Automated backup
       BACKUP_OTOMATIS: ${BACKUP_OTOMATIS:-true}
-      BACKUP_DIR: "/app/backups"
+      BACKUP_DIR: /app/backups
       BACKUP_HARI: ${BACKUP_HARI:-1}
       BACKUP_JAM: ${BACKUP_JAM:-2}
       BACKUP_ZONA: ${BACKUP_ZONA:-Asia/Jakarta}
+
     volumes:
       - backend_backups:/app/backups
       - backend_logs:/app/logs
-    depends_on:
-      db:
-        condition: service_healthy
+
     healthcheck:
-      # Endpoint /health native bawaan server.go
       test: ["CMD-SHELL", "curl -f http://127.0.0.1:3000/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
       start_period: 20s
 
-  # ─── DATABASE (MariaDB 10.11 LTS) ───────────────────────────────────
-  db:
-    image: mariadb:10.11
-    restart: unless-stopped
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      # Upload dokumen disimpan sebagai LONGBLOB di DB (maks 10MB)
-      - --max-allowed-packet=64M
-    networks:
-      - db-network
-    # Port tidak diekspos ke host (keamanan production)
-    environment:
-      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
-      MARIADB_DATABASE: ${DB_NAME:-lppm_db}
-      MARIADB_USER: ${DB_USER:-lppm_user}
-      MARIADB_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - db_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized || mariadb-admin ping -h 127.0.0.1 -u $$MARIADB_USER --password=$$MARIADB_PASSWORD"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-
-# ─── PERSISTENT VOLUMES ─────────────────────────────────────────────
+# ─── PERSISTENT VOLUMES ───────────────────────────────────
 volumes:
-  db_data:
-    name: lppm_db_data
   backend_backups:
     name: lppm_backend_backups
   backend_logs:
     name: lppm_backend_logs
 
-# ─── NETWORKS ───────────────────────────────────────────────────────
+# ─── NETWORKS ─────────────────────────────────────────────
 networks:
   app-network:
     name: lppm_app_network
     driver: bridge
-  db-network:
-    name: lppm_db_network
-    driver: bridge
-    # internal: true mencegah database berkomunikasi langsung ke internet publik
-    internal: true
+
+  # Network existing milik Coolify
+  coolify:
+    name: coolify
+    external: true
